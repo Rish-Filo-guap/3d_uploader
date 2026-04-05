@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Админ-панель - Управление файлами</title>
+    <link rel="stylesheet" href="../static/style.css">
+</head>
+<body>
+    <div class="container admin-container">
+        <div class="admin-header">
+            <h1>🔐 Админ-панель</h1>
+            <p>Управление загруженными файлами</p>
+            <a href="/" class="back-btn">← На главную</a>
+        </div>
+
+        <div id="filesContent" class="files-content">
+            <div class="loading">Загрузка данных...</div>
+        </div>
+    </div>
+
+    <script>
+        let allData = [];
+
+        async function loadFiles() {
+            const content = document.getElementById('filesContent');
+            content.innerHTML = '<div class="loading">Загрузка данных...</div>';
+            
+            try {
+                const response = await fetch('/api/files');
+                const data = await response.json();
+                allData = data;
+                renderFiles(data);
+            } catch (error) {
+                content.innerHTML = '<div class="error-message">Ошибка загрузки данных</div>';
+            }
+        }
+
+        function renderFiles(data) {
+            const content = document.getElementById('filesContent');
+            
+            if (data.length === 0) {
+                content.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">📭</div>
+                        <h3>Нет загруженных файлов</h3>
+                        <p>Пользователи еще не загрузили ни одного файла</p>
+                    </div>
+                `;
+                return;
+            }
+
+            content.innerHTML = data.map(user => `
+                <div class="user-card" data-user-id="${user.id}">
+                    <div class="user-header">
+                        <div class="user-info">
+                            <h2>👤 ${escapeHtml(user.name)}</h2>
+                            <div class="user-meta">
+                                <span>📅 ${user.upload_date}</span>
+                                <span>📁 ${user.files.length} файл(ов)</span>
+                            </div>
+                        </div>
+                        <button class="delete-user-btn" onclick="deleteUser(${user.id})">🗑️ Удалить пользователя</button>
+                    </div>
+                    
+                    <div class="files-grid">
+                        ${user.files.map(file => `
+                            <div class="file-card" data-file-id="${file.id}">
+                                <div class="file-preview">
+                                    ${file.has_preview && file.preview ? 
+                                        `<img src="data:${file.type};base64,${file.preview}" alt="${escapeHtml(file.filename)}">` :
+                                        `<div class="file-icon-large">${getFileIcon(file.type)}</div>`
+                                    }
+                                </div>
+                                <div class="file-info-admin">
+                                    <div class="file-name" title="${escapeHtml(file.filename)}">${escapeHtml(file.filename)}</div>
+                                    <div class="file-meta">
+                                        <span>${formatFileSize(file.size)}</span>
+                                        <span>${file.upload_date}</span>
+                                    </div>
+                                    <div class="file-actions">
+                                        <a href="/api/file/${file.id}" class="download-btn" download>📥 Скачать</a>
+                                        <button class="delete-btn" onclick="deleteFile(${file.id})">🗑️ Удалить</button>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function getFileIcon(type) {
+            if (!type) return '📎';
+            if (type.startsWith('image/')) return '🖼️';
+            if (type.startsWith('video/')) return '🎬';
+            if (type.startsWith('audio/')) return '🎵';
+            if (type.includes('pdf')) return '📄';
+            if (type.includes('word') || type.includes('document')) return '📝';
+            return '📎';
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function deleteFile(fileId) {
+            if (!confirm('Вы уверены, что хотите удалить этот файл?')) return;
+            
+            try {
+                const response = await fetch(`/api/delete/${fileId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    showToast('Файл успешно удален', 'success');
+                    loadFiles();
+                } else {
+                    const error = await response.json();
+                    showToast(error.error || 'Ошибка при удалении', 'error');
+                }
+            } catch (error) {
+                showToast('Ошибка соединения', 'error');
+            }
+        }
+
+        async function deleteUser(userId) {
+            if (!confirm('ВНИМАНИЕ! Это удалит пользователя и ВСЕ его файлы. Вы уверены?')) return;
+            
+            try {
+                const response = await fetch(`/api/delete-user/${userId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    showToast('Пользователь и все его файлы удалены', 'success');
+                    loadFiles();
+                } else {
+                    const error = await response.json();
+                    showToast(error.error || 'Ошибка при удалении', 'error');
+                }
+            } catch (error) {
+                showToast('Ошибка соединения', 'error');
+            }
+        }
+
+        function showToast(message, type) {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+
+        setInterval(loadFiles, 30000);
+        loadFiles();
+    </script>
+</body>
+</html>

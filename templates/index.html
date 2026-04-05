@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Загрузка файлов</title>
+    <link rel="stylesheet" href="../static/style.css">
+</head>
+<body>
+    <!-- Same content as before -->
+    <div class="container">
+        <div class="upload-card">
+            <div class="header">
+                <h1>📁 Загрузка файлов</h1>
+                <p>Загрузите несколько файлов и укажите ваше имя</p>
+            </div>
+
+            <form id="uploadForm" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="name">Ваше имя</label>
+                    <input type="text" id="name" name="name" placeholder="Введите ваше имя" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="files">Выберите файлы</label>
+                    <div class="file-drop-area" id="fileDropArea">
+                        <div class="file-drop-icon">📎</div>
+                        <div class="file-drop-text">Перетащите файлы сюда или нажмите для выбора</div>
+                        <div class="file-drop-hint">Можно выбрать несколько файлов</div>
+                        <input type="file" id="files" name="files" multiple style="display: none;">
+                    </div>
+                    <div id="fileList" class="file-list"></div>
+                </div>
+
+                <button type="submit" class="submit-btn" id="submitBtn">
+                    <span class="btn-text">Загрузить файлы</span>
+                    <span class="btn-loader" style="display: none;">Загрузка...</span>
+                </button>
+            </form>
+
+            <div id="message" class="message"></div>
+        </div>
+
+        <div class="admin-link">
+            <a href="/admin" class="admin-btn">🔒 Админ-панель</a>
+        </div>
+    </div>
+
+    <script>
+        // Same JavaScript as before
+        const dropArea = document.getElementById('fileDropArea');
+        const fileInput = document.getElementById('files');
+        const fileList = document.getElementById('fileList');
+        const form = document.getElementById('uploadForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const btnText = document.querySelector('.btn-text');
+        const btnLoader = document.querySelector('.btn-loader');
+        const messageDiv = document.getElementById('message');
+
+        let selectedFiles = [];
+
+        dropArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropArea.classList.add('dragover');
+        });
+
+        dropArea.addEventListener('dragleave', () => {
+            dropArea.classList.remove('dragover');
+        });
+
+        dropArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropArea.classList.remove('dragover');
+            const files = Array.from(e.dataTransfer.files);
+            addFiles(files);
+        });
+
+        dropArea.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            addFiles(Array.from(e.target.files));
+        });
+
+        function addFiles(files) {
+            files.forEach(file => {
+                if (!selectedFiles.find(f => f.name === file.name && f.size === file.size)) {
+                    selectedFiles.push(file);
+                }
+            });
+            updateFileList();
+        }
+
+        function updateFileList() {
+            if (selectedFiles.length === 0) {
+                fileList.style.display = 'none';
+                return;
+            }
+            
+            fileList.style.display = 'block';
+            fileList.innerHTML = selectedFiles.map((file, index) => `
+                <div class="file-item">
+                    <div class="file-info">
+                        <span class="file-icon">${getFileIcon(file.type)}</span>
+                        <div class="file-details">
+                            <div class="file-name">${escapeHtml(file.name)}</div>
+                            <div class="file-size">${formatFileSize(file.size)}</div>
+                        </div>
+                    </div>
+                    <button type="button" class="remove-file" onclick="removeFile(${index})">✕</button>
+                </div>
+            `).join('');
+        }
+
+        function removeFile(index) {
+            selectedFiles.splice(index, 1);
+            updateFileList();
+            fileInput.value = '';
+        }
+
+        function getFileIcon(type) {
+            if (type.startsWith('image/')) return '🖼️';
+            if (type.startsWith('video/')) return '🎬';
+            if (type.startsWith('audio/')) return '🎵';
+            if (type.includes('pdf')) return '📄';
+            if (type.includes('word') || type.includes('document')) return '📝';
+            return '📎';
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const name = document.getElementById('name').value.trim();
+            if (!name) {
+                showMessage('Пожалуйста, введите ваше имя', 'error');
+                return;
+            }
+            
+            if (selectedFiles.length === 0) {
+                showMessage('Пожалуйста, выберите файлы для загрузки', 'error');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            btnText.style.display = 'none';
+            btnLoader.style.display = 'inline';
+            
+            const formData = new FormData();
+            formData.append('name', name);
+            selectedFiles.forEach(file => {
+                formData.append('files', file);
+            });
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showMessage(result.message, 'success');
+                    selectedFiles = [];
+                    updateFileList();
+                    document.getElementById('name').value = '';
+                    fileInput.value = '';
+                } else {
+                    showMessage(result.error || 'Ошибка при загрузке', 'error');
+                }
+            } catch (error) {
+                showMessage('Ошибка соединения с сервером', 'error');
+            } finally {
+                submitBtn.disabled = false;
+                btnText.style.display = 'inline';
+                btnLoader.style.display = 'none';
+            }
+        });
+
+        function showMessage(msg, type) {
+            messageDiv.textContent = msg;
+            messageDiv.className = `message ${type}`;
+            setTimeout(() => {
+                messageDiv.className = 'message';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
